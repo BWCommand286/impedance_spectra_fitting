@@ -20,10 +20,10 @@ Desired functions:
 
 @author: Administratio"""
 
-
 import pandas as pd
 
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import random as rd
 import seaborn as sns
@@ -44,52 +44,11 @@ from scipy.ndimage import gaussian_filter1d
 
 
 import scipy.cluster.hierarchy as sch
+from datetime import datetime
 
-
-
-def cluster_distance(data, f_threshold=0.5): #Done
-    
-    """
-    Rearranges the distance/similarity matrix, corr_array, so that groups of low distance/ 
-    high similarty are next to eachother 
-    
-    Parameters
-    ----------
-    data : pandas.DataFrame or numpy.ndarray
-        a NxN distance or similarty matrix 
-        
-    Returns
-    -------
-    pandas.DataFrame or numpy.ndarray
-        a NxN distance or similarty matrix with the columns and rows rearranged
-    """
-    
-    pairwise_distances = sch.distance.pdist(data)
-
-    linkage = sch.linkage(pairwise_distances, method='complete')
-    
-    cluster_distance_threshold = pairwise_distances.max()*f_threshold
-    
-    idx_to_cluster_array = sch.fcluster(linkage, cluster_distance_threshold, 
-                                        criterion='distance')  
-    
-    
-    group_df = pd.DataFrame({'group':idx_to_cluster_array,'words':data.columns.values})
-    group_keys = list(set(idx_to_cluster_array))
-    
-    groups = []
-    
-    for key in group_keys:
-        groups.append(group_df[group_df['group'].isin([key])]['words'].tolist())
-        
-    
-    
-    idx = np.argsort(idx_to_cluster_array)
-    
-    if isinstance(data, pd.DataFrame):
-        return data.iloc[idx, :].T.iloc[idx, :], groups
-    
-    return data[idx, :][:, idx], idx, idx_to_cluster_array
+############################################################
+"""--------------Data reading functions------------------"""
+############################################################
 
 def get_file_list(pattern, avoid, root): #Done
     """
@@ -110,6 +69,11 @@ def get_file_list(pattern, avoid, root): #Done
         DESCRIPTION.
 
     """
+    
+    if root == '':
+        root = os.getcwd()
+    
+    
     root = root.replace('\\','/')
     
     file_list = []
@@ -125,17 +89,22 @@ def get_file_list(pattern, avoid, root): #Done
                 file_list.append(spec_file)
     
     
-    for file in file_list:
+    for i in range(0,len(file_list)):
+        
+        file = file_list[i]
+        name = name_list[i]
         
         a_count = 0
         for item in avoid:
-            if fnmatch(file, '*'+item+'*') == True:
+            if fnmatch(name, '*'+item+'*') == True:
                 a_count = a_count+1
         
         if a_count == 0:
             final_list.append(file)
     
     #return file list (paths) as dataframe
+    
+
     result = pd.DataFrame({'file_path':final_list})
     
     os.chdir(root)
@@ -186,6 +155,169 @@ def load_clean_data(factor, file_path): #Done
     
     return result              
 
+def get_sample_name(file_path):
+    lg.function_log()
+    
+    file_path = file_path.replace('\\', '/')
+    
+    file_path_list = file_path.split('/')
+    
+    parent_folder = file_path_list[len(file_path_list)-2]
+    sample_name = file_path_list[len(file_path_list)-1]
+    
+    block_end = sample_name.find("_")
+    sample_name = sample_name[block_end+1:]
+    sample_name = sample_name.replace(".txt","")
+
+    return parent_folder, sample_name
+
+def get_sample_dataset(data):
+    file_list = []
+
+    
+    if isinstance(data, list):
+        file_list = data
+    
+    if isinstance(data, pd.DataFrame):
+        file_list = list(data['file_path'])
+        
+    if isinstance(data, str):
+        file_list.append(data)
+    
+    if len(file_list)>1:
+        random_index = rd.randint(0,len(file_list)-1)
+    else:
+        random_index = 0       
+    
+
+    test_file = load_clean_data(1, file_list[random_index])    
+    f = test_file['frequency']
+    imag_z = test_file['imag_z']
+    name = file_list[random_index]
+        
+    return name, f, imag_z
+
+############################################################
+#
+#
+#
+#
+#
+#
+############################################################
+"""--------------Math functions/curves-------------------"""
+############################################################
+
+def _1gaussian(x, amp1,cen1,sigma1):
+    if sigma1 == 0:
+        gauss = 0*x
+    else:
+        gauss = amp1*(np.exp((-1.0/2.0)*(((x-cen1)/sigma1)**2)))
+    return gauss
+
+def multiple_gauss(x, *args):
+    
+    gauss = 0
+     
+    
+    if len(args) == 1:
+        arg_list = args[0]
+    else:
+        arg_list = list(args)
+    
+    k_temp = len(arg_list)/3   
+    k = int(k_temp)
+    
+    amp = arg_list[0:k]
+    cen = arg_list[1*k:1*k+k]
+    sigma = arg_list[2*k:2*k+k]
+    
+
+    for n in range(0,len(amp)):
+        if sigma[n] == 0:
+            value = 0*x
+        else:
+            value = amp[n]*(np.exp((-1.0/2.0)*(((x-cen[n])/sigma[n])**2)))
+        
+        gauss = gauss + value
+        #gauss = gauss + amp[n]*(1/(sigma[n]*(np.sqrt(2*np.pi))))*(np.exp((-1.0/2.0)*(((x-cen[n])/sigma[n])**2)))
+        
+    return gauss
+
+############################################################
+#
+#
+#
+#
+#
+#
+############################################################
+"""--------------Group data function---------------------"""
+############################################################
+
+def cluster_distance(data, f_threshold=0.5): #Done
+    
+    """
+    Rearranges the distance/similarity matrix, corr_array, so that groups of low distance/ 
+    high similarty are next to eachother 
+    
+    Parameters
+    ----------
+    data : pandas.DataFrame or numpy.ndarray
+        a NxN distance or similarty matrix 
+        
+    Returns
+    -------
+    pandas.DataFrame or numpy.ndarray
+        a NxN distance or similarty matrix with the columns and rows rearranged
+    """
+    
+    pairwise_distances = sch.distance.pdist(data)
+
+    linkage = sch.linkage(pairwise_distances, method='complete')
+    
+    #sch.dendrogram(linkage)
+    #lg.img_log(title='Dendrogramm',x_axis='Datensatz Nr.', y_axis='Abstand Vektoren')
+        
+        
+    
+    
+    
+    cluster_distance_threshold = pairwise_distances.max()*f_threshold
+    
+    
+    idx_to_cluster_array = sch.fcluster(linkage, cluster_distance_threshold, 
+                                        criterion='distance')  
+    
+    
+    group_df = pd.DataFrame({'group':idx_to_cluster_array,'words':data.columns.values})
+    group_keys = list(set(idx_to_cluster_array))
+    
+    groups = []
+    
+    for key in group_keys:
+        groups.append(group_df[group_df['group'].isin([key])]['words'].tolist())
+        
+    
+    
+    idx = np.argsort(idx_to_cluster_array)
+    
+    if isinstance(data, pd.DataFrame):
+        return data.iloc[idx, :].T.iloc[idx, :], groups, idx
+    
+    return data[idx, :][:, idx], idx, idx_to_cluster_array
+
+############################################################
+#
+#
+#
+#
+#
+#
+############################################################
+"""--------------Extract peaks from curves---------------"""
+############################################################
+
 def interp_derivative(x,y,start, end, increment, window, p_order, d_order, output):  
     lg.function_log()
     x_list = x
@@ -232,64 +364,66 @@ def interp_derivative(x,y,start, end, increment, window, p_order, d_order, outpu
     
     return result
 
-
-def multiple_gauss(x, *args):
-    
-    gauss = 0
-     
-    
-    if len(args) == 1:
-        arg_list = args[0]
-    else:
-        arg_list = list(args)
-    
-    k_temp = len(arg_list)/3   
-    k = int(k_temp)
-    
-    amp = arg_list[0:k]
-    cen = arg_list[1*k:1*k+k]
-    sigma = arg_list[2*k:2*k+k]
-    
-
-    for n in range(0,len(amp)):
-        if sigma[n] == 0:
-            value = 0*x
-        else:
-            value = amp[n]*(np.exp((-1.0/2.0)*(((x-cen[n])/sigma[n])**2)))
-        
-        gauss = gauss + value
-        #gauss = gauss + amp[n]*(1/(sigma[n]*(np.sqrt(2*np.pi))))*(np.exp((-1.0/2.0)*(((x-cen[n])/sigma[n])**2)))
-        
-    return gauss
-
-def generate_bounds(params, error):
+def histogram_maxima(peak_hist, plot_bins, hist_sigma, plot):
     lg.function_log()
-    bounds_min = []
-    bounds_max = []
+
+    #hist_filter_1 = savgol_filter(peak_hist,5,3)
+    #hist_filter = gaussian_filter1d(hist_filter_1,0.1)
     
-    for i in params:
-        bounds_min.append(i-error)
-        bounds_max.append(i+error)
-               
-    bnds = ((*bounds_min,), (*bounds_max,))
+    gauss_sigma = max(plot_bins)*hist_sigma
     
-    return bnds
+    """interpolate histogram for higher resolution"""
+    
+    interp_hist = interpolate.interp1d(plot_bins, peak_hist)
+    
+    new_inc = (plot_bins[1]-plot_bins[0])/10
+    
+    new_bins = np.arange(min(plot_bins), max(plot_bins), new_inc)
+    
+    
+    
+    hist_filter = gaussian_filter1d(interp_hist(new_bins),gauss_sigma)
+
+    """interpolation of histogram"""
+    hist_spline = UnivariateSpline(new_bins, hist_filter, k=4, s=0)
+
+    """higher number of bins for analysis of interpolation curve"""
+    #new_bins = np.arange(0,max(peak_hist),0.1)
+
+    """calculation of derivatives to find local maxima"""
+    d_hist_spline = hist_spline.derivative()
+    d2_hist_spline = hist_spline.derivative(2)
+    d_hist_roots = d_hist_spline.roots()
+
+
+    """only extract roots with positive values for d2/d2x(root)"""
+    find_peaks_result = []
+
+    for n in range(0,len(d_hist_roots)):
+        if d_hist_roots[n]>min(new_bins):
+            if d_hist_roots[n]<max(new_bins):
+                if d2_hist_spline(d_hist_roots[n])<0:
+                    find_peaks_result.append(d_hist_roots[n])
+    
+        
+    if plot == True:
+        plt.plot(plot_bins, peak_hist, label = 'center of mass histogram')
+        #plt.plot(plot_bins, hist_filter_1, label = 'savgol_filter')
+        plt.plot(new_bins, hist_filter, label = 'gauss_filter')
+        plt.plot(new_bins, d_hist_spline(new_bins), label = 'derivative')
+        plt.legend()
+        plt.show()
+
+    
+    cen_list = []
+    
+    for n in range(0, len(find_peaks_result)):
+        if hist_spline(find_peaks_result[n])>0:
+            cen_list.append(np.round(find_peaks_result[n],0))
             
-def bounds_merge(merged_bounds):
-    lg.function_log()
-    
-    bounds_min = []
-    bounds_max = []
-    
-    for i in merged_bounds:
-        bounds_min = bounds_min + (list(i[0]))
-        bounds_max = bounds_max + (list(i[1]))
-               
-    bnds = ((*bounds_min,), (*bounds_max,))
-    
-    return bnds
-    
-def peak_extract(sg_window, sg_poly, dev_order, data, plot):
+    return cen_list
+
+def peak_extract(sg_window, sg_poly, dev_order, data, plot = False, plot_title = ''):
     lg.function_log()
     
       
@@ -385,13 +519,6 @@ def peak_extract(sg_window, sg_poly, dev_order, data, plot):
     
     amp_list = list(hist_spline(cen_list))
     
-    #sigma_list = list([sigma_peak_find])*len(find_peaks_result)
-    """
-    print('detected peaks')
-    print(find_peaks_result)
-    print('these are the amplitudes')
-    print(hist_spline(find_peaks_result))
-    """
     if len(cen_list)>0:
         params, bnds = fit_params(amp_list, cen_list, hist_start, hist_end, 0.1, 1.25, 0.5, 2)
         
@@ -402,18 +529,18 @@ def peak_extract(sg_window, sg_poly, dev_order, data, plot):
         """plot peak search result"""
     
         if plot == True:
-            plt.plot(plot_bins, peak_hist, label = 'peak_hist')
-            plt.plot(plot_bins, hist_filter, label = 'hist_filter')
-            plt.plot(new_bins, d_hist_spline(new_bins), label = 'd_hist_spline')
-            #plt.plot(new_bins, multiple_gauss(new_bins, *params), label = 'gauss')
-            plt.plot(new_bins,g_hist)
-        
-            folder_text, sample_text = get_sample_name(file_list[i])
-            
-            plt.title(sample_text)
+            plt.rc('legend', fontsize=10)
+            plt.plot(plot_bins, peak_hist, label = 'histogram')
+            plt.plot(plot_bins, hist_filter, label = 'histogram smoothed')
+            plt.plot(new_bins, d_hist_spline(new_bins), label = '1. derivative')
+            plt.title(plot_title)
             plt.legend()
             plt.show()
-    
+            #plt.plot(new_bins, multiple_gauss(new_bins, *params), label = 'gauss')
+            #plt.plot(new_bins,g_hist)
+            
+            folder_text, sample_text = get_sample_name(file_list[i])
+
         n_peaks = len(cen_list)
         gauss_peaks = []
         gauss_sigma = []
@@ -435,77 +562,45 @@ def peak_extract(sg_window, sg_poly, dev_order, data, plot):
         gauss_sigma = []
     
     
-    return gauss_peaks, gauss_sigma                
+    return gauss_peaks, gauss_sigma 
 
-def histogram_maxima(peak_hist, plot_bins, hist_sigma, plot):
+############################################################
+#
+#
+#
+#
+#
+#
+############################################################
+"""--------------fitting -Im(Z) vs. freq-----------------"""
+############################################################
+
+def generate_bounds(params, error):
     lg.function_log()
-
-    #hist_filter_1 = savgol_filter(peak_hist,5,3)
-    #hist_filter = gaussian_filter1d(hist_filter_1,0.1)
+    bounds_min = []
+    bounds_max = []
     
-    gauss_sigma = max(plot_bins)*hist_sigma
+    for i in params:
+        bounds_min.append(i-error)
+        bounds_max.append(i+error)
+               
+    bnds = ((*bounds_min,), (*bounds_max,))
     
-    """interpolate histogram for higher resolution"""
-    
-    interp_hist = interpolate.interp1d(plot_bins, peak_hist)
-    
-    new_inc = (plot_bins[1]-plot_bins[0])/10
-    
-    new_bins = np.arange(min(plot_bins), max(plot_bins), new_inc)
-    
-    
-    
-    hist_filter = gaussian_filter1d(interp_hist(new_bins),gauss_sigma)
-
-    """interpolation of histogram"""
-    hist_spline = UnivariateSpline(new_bins, hist_filter, k=4, s=0)
-
-    """higher number of bins for analysis of interpolation curve"""
-    #new_bins = np.arange(0,max(peak_hist),0.1)
-
-    """calculation of derivatives to find local maxima"""
-    d_hist_spline = hist_spline.derivative()
-    d2_hist_spline = hist_spline.derivative(2)
-    d_hist_roots = d_hist_spline.roots()
-
-
-    """only extract roots with positive values for d2/d2x(root)"""
-    find_peaks_result = []
-
-    for n in range(0,len(d_hist_roots)):
-        if d_hist_roots[n]>min(new_bins):
-            if d_hist_roots[n]<max(new_bins):
-                if d2_hist_spline(d_hist_roots[n])<0:
-                    find_peaks_result.append(d_hist_roots[n])
-    
-        
-    if plot == True:
-        plt.plot(plot_bins, peak_hist, label = 'center of mass histogram')
-        #plt.plot(plot_bins, hist_filter_1, label = 'savgol_filter')
-        plt.plot(new_bins, hist_filter, label = 'gauss_filter')
-        plt.plot(new_bins, d_hist_spline(new_bins), label = 'derivative')
-
-        plt.legend()
-        plt.show()
-
-    
-    cen_list = []
-    
-    for n in range(0, len(find_peaks_result)):
-        if hist_spline(find_peaks_result[n])>0:
-            cen_list.append(np.round(find_peaks_result[n],0))
+    return bnds
             
-    return cen_list
-
-
-def _1gaussian(x, amp1,cen1,sigma1):
+def bounds_merge(merged_bounds):
     lg.function_log()
-    if sigma1 == 0:
-        gauss = 0*x
-    else:
-        gauss = amp1*(np.exp((-1.0/2.0)*(((x-cen1)/sigma1)**2)))
-    return gauss
-
+    
+    bounds_min = []
+    bounds_max = []
+    
+    for i in merged_bounds:
+        bounds_min = bounds_min + (list(i[0]))
+        bounds_max = bounds_max + (list(i[1]))
+               
+    bnds = ((*bounds_min,), (*bounds_max,))
+    
+    return bnds
 
 def fit_params(amp_list, cen_list, min_x, max_x, sigma_min, sigma_max, u_fit, div_cen): 
     lg.function_log()
@@ -518,12 +613,9 @@ def fit_params(amp_list, cen_list, min_x, max_x, sigma_min, sigma_max, u_fit, di
     bnds_cen_max = []
     bnds_sigma_max = []
     
-    
     fit_amp = []
     fit_cen = []
-    fit_sigma = []
-        
-    
+    fit_sigma = [] 
     
     
     d_cen_list = []
@@ -556,15 +648,12 @@ def fit_params(amp_list, cen_list, min_x, max_x, sigma_min, sigma_max, u_fit, di
         bnds_cen_min.append(fit_cen[i]-d_cen_list[i])
         bnds_cen_max.append(fit_cen[i]+d_cen_list[i+1])
         
-        f_sigma = min(max((d_cen_list[i]+d_cen_list[i+1])/2,0.5),1.24)
+        f_sigma = min(max((d_cen_list[i]+d_cen_list[i+1])/2,sigma_min),sigma_max)
         #d_sigma = f_sigma*u_fit
         
-        
-        
+
         bnds_sigma_min.append(sigma_min)
         bnds_sigma_max.append(sigma_max)
-        
-        
         
         fit_sigma.append(f_sigma)
 
@@ -583,28 +672,6 @@ def fit_params(amp_list, cen_list, min_x, max_x, sigma_min, sigma_max, u_fit, di
 
     return params, bnds 
     
-def max_peaks(peak_list, n_peaks, data):
-    lg.function_log()
-    
-    peaks = np.array(peak_list)
-    
-    f = data['frequency']
-    imag_z = data['imag_z']
-    
-    y_int = UnivariateSpline(f, imag_z, k=4)
-    
-    y_peaks = y_int(peaks)
-    
-    df = pd.DataFrame({'f': peaks, 'y': y_peaks})
-    
-    df = df.sort_values(['y'],ascending=False)
-    df = df.reset_index()
-    
-    
-    result = df[0:(n_peaks)]
-    
-    return result
-    
 def peak_filter(global_peaks, f_min, f_max):
     lg.function_log()
     
@@ -619,56 +686,6 @@ def peak_filter(global_peaks, f_min, f_max):
             peak_index.append(i)
             
     return peak_list, peak_index
-
-def df_append(path, name, f_min, f_max, im_max, real_max, exp_params_list, global_peaks, error, loop_index, df):
-    lg.function_log()
-    amp_txt = []
-    cen_txt = []
-    sigma_txt = []
-    fit_values = params_align(global_peaks, exp_params_list)
-    
-    df_values = list([path])+list([name])+list([f_min])+list([f_max])+list([im_max])+list([real_max])+list([error])+fit_values
-    
-
-    if loop_index == 0:
-        
-        for i in range(0,len(global_peaks)):
-        
-            amp_txt.append('im_Z_'+str(i+1))
-            cen_txt.append('freq_'+str(i+1))
-            sigma_txt.append('sigma_'+str(i+1))
-            
-            column_list = amp_txt+cen_txt+sigma_txt
-        
-        
-        df_list = ['path', 'name', 'f_min', 'f_max', 'im_max', 'real_max', 'error']+column_list
-        
-        for j in range(0,len(df_list)):
-            df.insert(j, df_list[j], df_values[j],True)
-            
-        
-        df.loc[loop_index] = df_values
-    else:
-        df.loc[loop_index] = df_values
-
-def get_sample_name(file_path):
-    lg.function_log()
-    
-    file_path = file_path.replace('\\', '/')
-    
-    file_path_list = file_path.split('/')
-    
-    parent_folder = file_path_list[len(file_path_list)-2]
-    sample_name = file_path_list[len(file_path_list)-1]
-    
-    block_end = sample_name.find("_")
-    sample_name = sample_name[block_end+1:]
-    sample_name = sample_name.replace(".txt","")
-    
-    result = parent_folder, sample_name
-
-    
-    return result
 
 def peaks_align(global_peaks, local_peaks, fill_zero):
     lg.function_log()
@@ -704,6 +721,55 @@ def peaks_align(global_peaks, local_peaks, fill_zero):
     else:
         result = global_peaks
         
+    return result
+
+def peaks_assign(global_peaks, exp_fit_params, f_min, f_max):
+    lg.function_log()
+    
+    peak_ranges = []
+    
+    n_peaks = len(global_peaks)
+    
+    n_params = round(len(exp_fit_params)/3)
+    
+    amp_list = exp_fit_params[0:n_params]
+    cen_list = exp_fit_params[n_params:n_params*2]
+    sigma_list = exp_fit_params[n_params*2:n_params*3]
+       
+
+    p_list = []
+    d_list = []
+    
+    for d in range(0, n_peaks-1):
+        d_f = global_peaks[d+1]-global_peaks[d]
+        
+        f_x = global_peaks[d]+d_f
+        
+        d_list.append(f_x)
+    
+    
+    
+    p_list.append(f_min)
+    p_list = p_list + d_list
+    p_list.append(f_max)
+    
+    
+    amp_new = [0]*n_peaks
+    cen_new = [0]*n_peaks
+    sigma_new = [0]*n_peaks
+    
+    for j in range(0, len(cen_list)):
+        
+        for i in range(0,n_peaks):
+        
+            if p_list[i] < cen_list[j] <= p_list[i+1]:
+                amp_new[i] = amp_list[j]
+                cen_new[i] = cen_list[j]
+                sigma_new[i] = sigma_list[j]
+                
+    result = amp_new+cen_new+sigma_new
+       
+            
     return result
 
 def params_align(global_peaks, exp_fit_params):
@@ -750,7 +816,162 @@ def params_align(global_peaks, exp_fit_params):
     result = amp_new+cen_new+sigma_new
         
     return result
+
+def df_append(path, name, f_min, f_max, im_max, real_max, exp_params_list, global_peaks, error, loop_index, df):
+    lg.function_log()
+    amp_txt = []
+    cen_txt = []
+    sigma_txt = []
+    fit_values = params_align(global_peaks, exp_params_list)
     
+    df_values = list([path])+list([name])+list([f_min])+list([f_max])+list([im_max])+list([real_max])+list([error])+fit_values
+    
+
+    if loop_index == 0:
+        
+        for i in range(0,len(global_peaks)):
+        
+            amp_txt.append('im_Z_'+str(i+1))
+            cen_txt.append('freq_'+str(i+1))
+            sigma_txt.append('sigma_'+str(i+1))
+            
+            column_list = amp_txt+cen_txt+sigma_txt
+        
+        
+        df_list = ['path', 'name', 'f_min', 'f_max', 'im_max', 'real_max', 'error']+column_list
+        
+        for j in range(0,len(df_list)):
+            df.insert(j, df_list[j], df_values[j],True)
+            
+        
+        df.loc[loop_index] = df_values
+    else:
+        df.loc[loop_index] = df_values
+
+def total_fit_error(x, y_real, y_fit, ter):
+    lg.function_log()
+    err = 0
+    
+    
+    for i in range(0,len(x)):
+        err = err+((y_real[i]-y_fit[i])/ter)**2
+    
+    return err   
+
+def fit_spectrum(sg_global, sg_local, sg_poly, dev_global, dev_local, u_fit, div_cen, data, n_peaks, peaks):
+    lg.function_log()
+    
+    fail_df = pd.DataFrame()
+    fail_df.insert(0,'fail_path', 'dummy')
+    file_list = []
+
+    n_success = 0    
+
+    if isinstance(data, str):
+        file_list.append(data)
+    else:
+        if isinstance(data, list):
+            file_list = data
+        else:
+            file_list = data['file_path'].tolist()
+
+    
+    output_df = pd.DataFrame()
+    
+    
+    gauss_peaks, gauss_sigma = peak_extract(sg_global, sg_poly, dev_global, data, True, 'global peak detection')
+    global_peaks = gauss_peaks
+    
+
+    n_data = len(file_list)
+    
+    for i in range(0,n_data):
+        
+        peak_inc = 0
+        
+        print('progress: '+str(np.round(i/n_data*100, 2))+' %')
+        
+        if peaks == 'single':
+            gauss_peaks, gauss_sigma = peak_extract(sg_local, sg_poly, dev_local, file_list[i], True, 'local peak detection')
+            if len(gauss_peaks) > len(global_peaks):
+                while len(gauss_peaks) > len(global_peaks):
+                    gauss_peaks, gauss_sigma = peak_extract(sg_local+peak_inc, sg_poly, dev_local, file_list[i], True, 'local peak detection')
+                    peak_inc = peak_inc + 2
+        
+        if  1 <= len(gauss_peaks) <= len(global_peaks):
+            print('local and global peaks used')
+
+        else:
+            print(' only global peaks used')
+            gauss_peaks = global_peaks
+        
+        
+        folder_name, sample_name = get_sample_name(file_list[i])
+               
+              
+        test_file = load_clean_data(1, file_list[i])    
+        
+        f = test_file['frequency']
+        imag_z = test_file['imag_z']
+        real_z = test_file['real_z']
+                
+        """Filtern der Peaks über den Frequenzbereich"""
+        
+        gauss_peaks = peaks_align(global_peaks, gauss_peaks, False)
+        
+        gauss_peaks, peak_index = peak_filter(gauss_peaks, min(f), max(f))
+        
+        
+        #interpolate data
+        imag_int = UnivariateSpline(f, imag_z, k=4, s=0)
+        
+        amp_list = list(imag_int(gauss_peaks))
+        cen_list = gauss_peaks
+
+        sigma_min = 0.5
+        sigma_max = 1.0
+        
+        p_init, bnds = fit_params(amp_list, cen_list, min(f), max(f), sigma_min, sigma_max, u_fit, div_cen)
+
+        ff = 0
+        
+        try:
+            exp_fit_params, exp_fit_errs = scipy.optimize.curve_fit(multiple_gauss, f, imag_z, p0=p_init, bounds = bnds)
+            success = True
+
+            #df_append(file_list[i], sample_name, min(f), max(f), exp_fit_params, global_peaks, i, output_df)
+
+        except Exception as e:
+            
+            print(e)
+            success = False
+            print(sample_name+' failed')
+            fail_df.loc[ff] = file_list[i]
+            
+            
+            #exp_fit_param = p_init
+            #df_append(sample_list[i], min(f), max(f), exp_fit_params, global_peaks, i, output_df)
+            pass
+        
+        if success == True:
+            error = total_fit_error(f, imag_z, multiple_gauss(f, *exp_fit_params), max(real_z))
+            df_append(file_list[i], sample_name, min(f), max(f), max(imag_z), max(real_z), exp_fit_params, global_peaks, error, n_success, output_df)
+            n_success = n_success+1
+            
+    print(str(len(file_list)-n_success)+' curves could not be fitted')
+    return output_df
+
+############################################################
+#
+#
+#
+#
+#
+#
+############################################################
+"""--------------plot functions--------------------------"""
+############################################################
+
 def generate_peaks(gauss_peaks, f, imag_z):
     lg.function_log()
     
@@ -777,191 +998,16 @@ def generate_peaks(gauss_peaks, f, imag_z):
     
     return peak_df
 
-def peaks_assign(global_peaks, exp_fit_params, f_min, f_max):
-    lg.function_log()
-    
-    peak_ranges = []
-    
-    n_peaks = len(global_peaks)
-    
-    n_params = round(len(exp_fit_params)/3)
-    
-    amp_list = exp_fit_params[0:n_params]
-    cen_list = exp_fit_params[n_params:n_params*2]
-    sigma_list = exp_fit_params[n_params*2:n_params*3]
-    
-    
-    print(amp_list)
-    print(cen_list)
-    print(sigma_list)
-    
-
-    p_list = []
-    d_list = []
-    
-    for d in range(0, n_peaks-1):
-        d_f = global_peaks[d+1]-global_peaks[d]
-        
-        f_x = global_peaks[d]+d_f
-        
-        d_list.append(f_x)
-    
-    
-    
-    p_list.append(f_min)
-    p_list = p_list + d_list
-    p_list.append(f_max)
-    
-    print(p_list)
-    
-    amp_new = [0]*n_peaks
-    cen_new = [0]*n_peaks
-    sigma_new = [0]*n_peaks
-    
-    for j in range(0, len(cen_list)):
-        
-        for i in range(0,n_peaks):
-        
-            if p_list[i] < cen_list[j] <= p_list[i+1]:
-                amp_new[i] = amp_list[j]
-                cen_new[i] = cen_list[j]
-                sigma_new[i] = sigma_list[j]
-                
-    result = amp_new+cen_new+sigma_new
-       
-            
-    return result
-
-def fit_spectrum(sg_global, sg_local, sg_poly, dev_global, dev_local, u_fit, div_cen, data, n_peaks, peaks):
-    lg.function_log()
-    
-    fail_df = pd.DataFrame()
-    fail_df.insert(0,'fail_path', 'dummy')
-    file_list = []
-
-    n_success = 0    
-
-    if isinstance(data, str):
-        file_list.append(data)
-    else:
-        if isinstance(data, list):
-            file_list = data
-        else:
-            file_list = data['file_path'].tolist()
-
-    
-    output_df = pd.DataFrame()
-    
-    
-    gauss_peaks, gauss_sigma = peak_extract(sg_global, sg_poly, dev_global, data, True)
-    global_peaks = gauss_peaks
-
-    
-    for i in range(0,len(file_list)):
-        
-        peak_inc = 0
-        
-        if peaks == 'single':
-            gauss_peaks, gauss_sigma = peak_extract(sg_local, sg_poly, dev_local, file_list[i], True)
-            if len(gauss_peaks) > len(global_peaks):
-                while len(gauss_peaks) > len(global_peaks):
-                    gauss_peaks, gauss_sigma = peak_extract(sg_local+peak_inc, sg_poly, dev_local, file_list[i], True)
-                    peak_inc = peak_inc + 2
-        
-        if  1 < len(gauss_peaks) <= len(global_peaks):
-            print(str(len(gauss_peaks))+'local peaks used')
-            #print(gauss_peaks)
-        else:
-            print(str(len(global_peaks))+' global peaks used')
-            gauss_peaks = global_peaks
-            #print(gauss_peaks)
-        
-        
-        folder_name, sample_name = get_sample_name(file_list[i])
-               
-        print(sample_name)
-        
-        test_file = load_clean_data(1, file_list[i])    
-        
-        f = test_file['frequency']
-        imag_z = test_file['imag_z']
-        real_z = test_file['real_z']
-                
-        """Filtern der Peaks über den Frequenzbereich"""
-        
-        gauss_peaks = peaks_align(global_peaks, gauss_peaks, False)
-        
-        gauss_peaks, peak_index = peak_filter(gauss_peaks, min(f), max(f))
-        
-        
-
-        imag_int = UnivariateSpline(f, imag_z, k=4, s=0)
-        
-        amp_list = list(imag_int(gauss_peaks))
-        cen_list = gauss_peaks
-        
-        print(str(len(cen_list))+' peaks used for fitting')
-        #print(cen_list)
-        
-        sigma_min = 0.5
-        sigma_max = 0.8
-        
-        p_init, bnds = fit_params(amp_list, cen_list, min(f), max(f), sigma_min, sigma_max, u_fit, div_cen)
-        
-
-        """
-        exp_fit_params, exp_fit_errs = scipy.optimize.curve_fit(multiple_gauss, f, imag_z, p0=p_init, bounds = bnds)
-        df_append(file_list[i], sample_list[i], min(f), max(f), exp_fit_params, global_peaks, i, output_df)
-        
-        """
-        ff = 0
-        
-        
-        
-        try:
-            
-            if sigma_min == sigma_max:
-                
-                exp_fit_params, exp_fit_errs = scipy.optimize.curve_fit(multiple_gauss_fix, f, imag_z, p0=p_init, bounds = bnds)
-                success = True
-                exp_fit_params = exp_fit_params.tolist()+len(cen_list)*[0.5]
-                exp_fit_params = np.array(exp_fit_params)
-            else:
-                exp_fit_params, exp_fit_errs = scipy.optimize.curve_fit(multiple_gauss, f, imag_z, p0=p_init, bounds = bnds)
-                success = True
-            
-            
-            
-
-            
-            #df_append(file_list[i], sample_name, min(f), max(f), exp_fit_params, global_peaks, i, output_df)
-        except:
-            success = False
-            print(sample_name+' failed')
-            
-            fail_df.loc[ff] = file_list[i]
-            
-            #exp_fit_param = p_init
-            #df_append(sample_list[i], min(f), max(f), exp_fit_params, global_peaks, i, output_df)
-            pass
-        
-        if success == True:
-            error = total_fit_error(f, imag_z, multiple_gauss(f, *exp_fit_params))
-            df_append(file_list[i], sample_name, min(f), max(f), max(imag_z), max(real_z), exp_fit_params, global_peaks, error, n_success, output_df)
-            n_success = n_success+1
-            
-    print(str(len(file_list)-n_success)+' curves could not be fitted')
-    return output_df
-
-def total_fit_error(x, y_real, y_fit):
-    lg.function_log()
-    err = 0
-    
-    
-    for i in range(0,len(x)):
-        err = err+(y_real[i]-y_fit[i])**2
-    
-    return err    
+############################################################
+#
+#
+#
+#
+#
+#
+############################################################
+"""--------------complex number functions----------------"""
+############################################################
 
 def Z_R_CPE(log_f,n,R,Q):
     lg.function_log()
@@ -1013,277 +1059,303 @@ def get_Im_Z(data):
         
     return df
 
-        
-def get_sample_dataset(data):
-    lg.function_log()
-    file_list = []
-
+############################################################
+#
+#
+#
+#
+#
+#
+############################################################
+"""--------------user input handling---------------------"""
+############################################################
+                
+def input_control(message):
     
-    if isinstance(data, list):
-        file_list = data
+    print(message)
     
-    if isinstance(data, pd.DataFrame):
-        file_list = list(data['file_path'])
-        
-    if isinstance(data, str):
-        file_list.append(data)
-    
-    if len(file_list)>1:
-        random_index = rd.randint(0,len(file_list)-1)
+    if input() == 'y':
+        pass
     else:
-        random_index = 0       
-    
+        sys.exit()
 
-    test_file = load_clean_data(1, file_list[random_index])    
-    f = test_file['frequency']
-    imag_z = test_file['imag_z']
-    name = file_list[random_index]
-        
-    return name, f, imag_z
-        
+"""/////////////////////////////////////////////////
 
-"""/////////////////////////////////
-///////////////////////////////////
-//////////////////////////////////
-/////////////////////////////////
-////////////////////////////////
-///////////////////////////////
-//////////////////////////////
+////////////////////////////////////////////////////
 
     test script starting form here"""
 
-def main():
+def main(corr_threshold, root, avoid, pattern, report = False):
     lg.function_log()
     
     
-    
-    
-    """get data"""
-    
-    root = r'E:\PhD\Finale Übergabe\Derma Imp\Analyse\237_Derma Imp\raw curves'
-    pattern = 'Block'
-    avoid = []
+    ############################################################
+    """0. get data"""
+    ############################################################
     
     data = get_file_list(pattern, avoid, root)
     
     n_samples = len(data)
-    print(str(n_samples)+' datasets will be analysed')
+    print(str(n_samples)+' datasets will be analysed')   
     
     
+    ############################################################
+    """1. set parameters"""
+    ############################################################
     
-    
-    
-    """set parameters for peak extraction"""
-    
-    sg_global = 11
+    """1.1 parameters for smoothing the impedance curve"""
+    #
+    #filter window for savitzky golay (sg) filter (greater then sg_poly, odd)
+    sg_global = 9
     sg_local = 7
     
+    #polynomial order for savitzky golay (sg) filter (>= 3, odd)
     sg_poly = 3
     
-    dev_global = 3
+    """1.2 parameters to extract peaks from the impedance curve"""
+    #derivative orders for peak extraction (dev_local = 1, dev_global => 3)
+    dev_global = 5
     dev_local = 1
     
+    """1.3 parameters for fitting the impedance curve - boundary settings"""
+    
+    #allowed relative change of peak height (0 < u_fit < 1)
     u_fit = 0.95
     
-    div_cen = 3
+    #allowed displacement from peak centre -> high value -> low displacement (div_cen > 0)
+    div_cen = 4
     
-    """choose if global peaks should be adjusted"""
-    
-    #peak_select = 'all'
+    #choose if global peaks should be adjusted to locally detected peaks yes -> single, no -> global
     peak_select = 'single'
     
-    """plot random data set"""
+    """1.4 set plot parameters"""
     plt.rcParams.update({'font.size': 14})
        
     width = 14
     height = 3
     scaling = 1
-    fig = plt.figure(figsize=(width*scaling, height*scaling*2))
     
-    
-    
-    print(data)
-    
+  
+
+    ############################################################
     """2. fit all curves - use globally extracted peaks"""
+    ############################################################
     
-    print('start curve analysis?')
+    input_control('start curve analysis?')
     
-    if input() == 'y':
-        #threshold for correlation cluster binarization
-        threshold = 0.97
+    error_list = []
+    
+    #try to group data, convert source dataframe to list if no groups found
+    try:
+        test_f = get_Im_Z(data)
+        corr_map = test_f.corr()
+        
+        labels = [get_sample_name(x)[1] for x in corr_map.columns.values]
+        #optional plot
+        #sns.heatmap(corr_map, xticklabels=labels, yticklabels=labels)
+        #lg.img_log(title='nicht sortiert',x_axis='Datensatz Nr.', y_axis='Datensatz Nr.')
+        
+        corr_map, data_groups, label = cluster_distance(corr_map, corr_threshold)
+        
+        labels = [get_sample_name(x)[1] for x in corr_map.columns.values]
+        #sns.heatmap(corr_map, xticklabels=labels, yticklabels=labels)
+        #lg.img_log(title='nach Clustering',x_axis='Datensatz Nr.', y_axis='Datensatz Nr.')
+        
+        data_dict = {}
+        
+        for idx, group in enumerate(data_groups):
+            group_str = 'group_'+str(idx)
+            data_dict[group_str] = str(len(group))
+        
+        
+        print('number of data groups: '+str(len(data_groups)))
+        print('groups: '+str(data_dict))
+        
+        data = data_groups
+    except Exception as e:
+        
+        print(e)
+        data_groups = []
+        data_groups.append(data['file_path'].tolist())
+        print('no groups found')
+        pass
+    
+    
+    input_control('proceed? - y/n')
+    
+    result_list = []
+    result_names = []
+    
+    
+    #perform fitting for each data group
+    for i in range(0,len(data_groups)):
+        
+        data = data_groups[i]
+        test_name, f, imag_z = get_sample_dataset(data)
+        
+        parent_folder, sample_name = get_sample_name(test_name)
+        sample_name = 'sample: '+str(sample_name)
+        print(sample_name)
+        
+        proceed = False
+        
+        while proceed == False:
+            """1. Check peak extraction"""
+            gauss_peaks, gauss_sigma = peak_extract(sg_global, sg_poly, dev_global, data, True)
+            print(str(len(gauss_peaks))+' peaks used for fitting: '+str(gauss_peaks))
+            
+            local_peaks, local_sigma = peak_extract(sg_local, sg_poly, dev_local, test_name, True)
+            peak_df = generate_peaks(local_peaks, f, imag_z)
+            
+            """display peaks"""
+            plt.plot(f, imag_z, label = sample_name)
+            for j in range(0, len(local_peaks)):
+                plt.plot(f, peak_df[str(j)],label = 'peak '+str(j))
+            plt.legend()
+            plt.show()
+        
+            print('peak extraction ok? - y/n')
+            
+            if input() == 'y':
+                break
+            else:
+                print('enter global (sg) filter window (odd, greater then 7)')
+                sg_global = int(input())
+                print('enter local (sg) filter window (odd, greater then 5)')
+                sg_local = int(input())
+
+        input_control('start fitting now? - y/n')
+        
+        data = data_groups[i]
+        print('Fitting group number '+str(i))
+        result = fit_spectrum(sg_global, sg_local, sg_poly, dev_global, dev_local, u_fit, div_cen, data, 3, peak_select)
         
         try:
-            test_f = get_Im_Z(data)
-            corr_map = test_f.corr()
-            corr_map = cluster_corr(corr_map)
-            
-            data_groups = corr_divide(corr_map, threshold)
-            data = data_groups
+            error_list = error_list+result['error'].to_list()
         except:
-            data_groups = []
-            data_groups.append(data['file_path'].tolist())
             pass
         
+        result_names.append(r'\result pattern_'+pattern+'_group'+str(i)+'.csv')
+        result_list.append(result)
         
-        
-        
-        result_list = [] 
-        result_names = []
-        
-        for i in range(0,len(data_groups)):
+    #plot data and save figure for each fitted dataset and save to csv
+    
+    if report == True:
+        for i in range(0,len(result_list)):    
+            #write results to file
+            file_name = result_names[i]
+            result = result_list[i]
+            result.to_csv(root+file_name)
             
-            data = data_groups[i]
-            test_name, f, imag_z = get_sample_dataset(data)
+            #plot result
+            result_shape = result.shape
             
-            print(test_name)
+            result = result.reset_index()
             
-            proceed = False
+            n_samples = result_shape[0]
+            n_peaks = round((result_shape[1]-6)/3)
             
-            while proceed == False:
-                """1. Check peak extraciont"""
-                gauss_peaks, gauss_sigma = peak_extract(sg_global, sg_poly, dev_global, data, True)
-                print(str(len(gauss_peaks))+' used for fitting')
+            
+            
+            plt.rcParams.update({'font.size': 14})
+               
+            width = 14
+            height = 3
+            scaling = 1
+            
+            
+            for k in range(0,n_samples):
                 
-                local_peaks, local_sigma = peak_extract(sg_local, sg_poly, dev_local, test_name, True)
+                
+                fit_data = pd.DataFrame()
+                
+                fig = plt.figure(figsize=(width*scaling, height*scaling*2))
+                
+                names = result['name']
+                paths = result['path']
+                
+                row = result.loc[k]
+                gauss_params = row[8:len(row)]
+         
+            
+                
+                legend_temp = names[k]
+                print(legend_temp)
+                legend_text = legend_temp.replace('.','_')
+                spectrum = load_clean_data(1, paths[k])
+                
+                x = spectrum['frequency']
+                y = spectrum['imag_z']
+                
+                fit_data.insert(fit_data.shape[1], 'frequency', x, True)
+                fit_data.insert(fit_data.shape[1], 'imag_z', y, True)
+                 
+            
+                plt.plot(x, y, '-',label=legend_text)
+                
+                amp_list = []
+                cen_list = []
+                sigma_list = []
+                
+                R_CPE_list = []
+                
+                n_index = 3
+                
+                start = 0
+                end = n_peaks
+                
+                for n in range(start, end):
+                    
+                    amp1 = gauss_params[n]
+                    cen1 = gauss_params[n+n_peaks]
+                    sigma1 = gauss_params[n+n_peaks*2]
+                    
+                    amp_list.append(amp1)
+                    cen_list.append(cen1)
+                    sigma_list.append(sigma1)
+                    
+            
+                    
+                    plt.plot(x, _1gaussian(x, amp1, cen1, sigma1), label = 'f_'+str(n+1)+', sigma'+str(sigma1))
+                    fit_data.insert(fit_data.shape[1], 'f_'+str(n+1), _1gaussian(x, amp1, cen1, sigma1), True)
                 
                 
-                peak_df = generate_peaks(local_peaks, f, imag_z)
                 
-                """display peaks"""
-                plt.plot(f, imag_z, label = 'sample dataset')
-                for j in range(0, len(local_peaks)):
-                    plt.plot(f, peak_df[str(j)],label = 'peak '+str(j))
+                sum_gauss = amp_list+cen_list+sigma_list
+            
+                plt.plot(x, multiple_gauss(x, *sum_gauss), label = 'fit')
+                fit_data.insert(fit_data.shape[1], 'fit', multiple_gauss(x, *sum_gauss), True)
+                
+                plt.title(legend_text)
                 plt.legend()
+                plt.grid()
                 plt.show()
                 
-                print('peak extraction ok?')
+                #save figures
+                fig.savefig(legend_text, dpi=600)
                 
-                if input() == 'y':
-                    break
-                else:
-                    print('enter global filter window (odd, greater then 7)')
-                    sg_global = int(input())
-                    print('enter local filter window (odd, greater then 5)')
-                    sg_local = int(input())
-                    print(sg_global)
-            
-            print('proceed?')
-            
-            if input() != 'y':
-                sys.exit()
-            
-            data = data_groups[i]
-            print('Fitting group number '+str(i))
-            result = fit_spectrum(sg_global, sg_local, sg_poly, dev_global, dev_local, u_fit, div_cen, data, 3, peak_select)
-            result_names.append(r'\pattern '+pattern+'_'+str(i)+'.csv')
-            result_list.append(result)
-    else:
-        sys.exit()
-    
-    
-    print(len(result_list))
-    
-    for i in range(0,len(result_list)):    
-        #write results to file
-        file_name = result_names[i]
-        result = result_list[i]
-        result.to_csv(root+file_name)
-        
-        #plot result
-        result_shape = result.shape
-        
-        result = result.reset_index()
-        
-        n_samples = result_shape[0]
-        n_peaks = round((result_shape[1]-6)/3)
-        
-        
-        
-        plt.rcParams.update({'font.size': 14})
-           
-        width = 14
-        height = 3
-        scaling = 1
-        
-        
-        
-        for k in range(0,n_samples):
-            
-            
-            fit_data = pd.DataFrame()
-            
-            fig = plt.figure(figsize=(width*scaling, height*scaling*2))
-            
-            names = result['name']
-            paths = result['path']
-            
-            row = result.loc[k]
-            gauss_params = row[8:len(row)]
-     
-        
-            
-            legend_temp = names[k]
-            print(legend_temp)
-            legend_text = legend_temp.replace('.','_')
-            spectrum = load_clean_data(1, paths[k])
-            
-            x = spectrum['frequency']
-            y = spectrum['imag_z']
-            
-            fit_data.insert(fit_data.shape[1], 'frequency', x, True)
-            fit_data.insert(fit_data.shape[1], 'imag_z', y, True)
-             
-        
-            plt.plot(x, y, '-',label=legend_text)
-            
-            amp_list = []
-            cen_list = []
-            sigma_list = []
-            
-            R_CPE_list = []
-            
-            n_index = 3
-            
-            start = 0
-            end = n_peaks
-            
-            for n in range(start, end):
+                #save fitted spectra to csv
+                fit_data.to_csv(root+'\\'+legend_text+'.csv')
                 
-                amp1 = gauss_params[n]
-                cen1 = gauss_params[n+n_peaks]
-                sigma1 = gauss_params[n+n_peaks*2]
-                
-                amp_list.append(amp1)
-                cen_list.append(cen1)
-                sigma_list.append(sigma1)
-                
-        
-                
-                plt.plot(x, _1gaussian(x, amp1, cen1, sigma1), label = 'f_'+str(n+1)+', sigma'+str(sigma1))
-                fit_data.insert(fit_data.shape[1], 'f_'+str(n+1), _1gaussian(x, amp1, cen1, sigma1), True)
-            
-            
-            
-            sum_gauss = amp_list+cen_list+sigma_list
-        
-            plt.plot(x, multiple_gauss(x, *sum_gauss), label = 'fit')
-            fit_data.insert(fit_data.shape[1], 'fit', multiple_gauss(x, *sum_gauss), True)
-            
-            plt.title(legend_text)
-            plt.legend()
-            plt.grid()
-            plt.show()
-             
-            
-            #save figures
-            
-            fig.savefig(legend_text, dpi=600)
-            
-            print(fit_data)
-            fit_data.to_csv(root+'\\'+legend_text+'.csv')
-            print(root+legend_text)
 
+#optional function execution logging for error reporting
 #lg.log_init()
-main()
 
+source = r'C:\Users\Roman\Documents\GitHub\impedance_spectra_fitting\040918 silox test 3d'
 
+#include all filenames, that contains 
+contains = 'Block'
+
+#filenames that contain any of the following patterns will not be included - leave empty [] if not required
+avoid = ['egta','triton','hex', 'fenp', 'kHz', 'salicyl', 'nyst']
+
+#threshold (0 to 1) form groups of similar datasets
+thr = 0.3
+
+t1 = datetime.now()
+
+main(thr, source, avoid, contains, report = True)
+
+t2 = datetime.now()
+delta_t = t2-t1
+print('calculation time: '+str(delta_t))
